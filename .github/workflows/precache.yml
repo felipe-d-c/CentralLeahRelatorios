@@ -1,0 +1,40 @@
+name: Atualizar cache dos relatórios (meia-noite)
+on:
+  schedule:
+    - cron: "5 3 * * *"
+  workflow_dispatch:
+concurrency:
+  group: precache
+  cancel-in-progress: false
+jobs:
+  precache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - name: Baixar dados da API (cache único: vale para Comercial e Vendas)
+        working-directory: modulos/comercial
+        env:
+          TOKEN_VIDEIRA: ${{ secrets.TOKEN_VIDEIRA }}
+          TOKEN_JOACABA: ${{ secrets.TOKEN_JOACABA }}
+          TOKEN_TREZE_TILIAS: ${{ secrets.TOKEN_TREZE_TILIAS }}
+          TOKEN_CAMPOS_NOVOS: ${{ secrets.TOKEN_CAMPOS_NOVOS }}
+          TOKEN_ROTA: ${{ secrets.TOKEN_ROTA }}
+        run: python precache.py
+        continue-on-error: true
+      - name: Commit do cache
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add cache/*.json
+          if git diff --staged --quiet; then echo "Sem mudanças."; else
+            git commit -m "chore: cache dos relatórios $(date -u +%Y-%m-%d)"
+            git pull --rebase && git push
+          fi
