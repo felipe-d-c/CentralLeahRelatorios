@@ -1,0 +1,10 @@
+{
+  "joacaba": {
+    "Nome COMPLETO da vendedora como aparece no sistema": {
+      "meta": 60000,
+      "Corporal": 0.30,
+      "Facial": 0.25,
+      "Depilação": 0.45
+    }
+  }
+}

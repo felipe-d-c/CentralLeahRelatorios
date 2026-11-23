@@ -1,0 +1,9 @@
+streamlit>=1.40
+requests
+pandas
+openpyxl
+matplotlib
+seaborn
+fpdf2
+reportlab
+Pillow
