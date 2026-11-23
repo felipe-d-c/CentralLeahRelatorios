@@ -56,6 +56,25 @@ def baixar_da_api(progresso):
             "inicio_vendas": inicio.isoformat(), "sessoes": linhas, "clientes": clientes}, diag
 
 
+def buscar_inadimplentes(meses, progresso=None):
+    """Clientes que o Belle marca como Inadimplente nos atendimentos de [hoje - meses, hoje + 30 dias]."""
+    token = tokens.get(slug(unidade))
+    if not token:
+        raise RuntimeError(f"Sem token da unidade {unidade} nos secrets.")
+    cli = BelleClient(token)
+    hoje = dt.date.today()
+    brutos = []
+    jan = list(cli.janelas(hoje - dt.timedelta(days=30 * int(meses)), hoje + dt.timedelta(days=30)))
+    for i, (a, b) in enumerate(jan):
+        if progresso:
+            progresso(i / len(jan), f"Inadimplentes {a:%m/%Y}…")
+        brutos += cli.get("relatorios/relatorio_atendimentos", {
+            "codEstab": 1, "dtInicio": cli.d(a), "dtFim": cli.d(b), "statusInadimplencia": "Inadimplente"})
+    r = fc.canon_inadimplentes_api(brutos)
+    r.update({"meses": int(meses), "atualizado_em": dt.datetime.now().strftime("%d/%m/%Y %H:%M")})
+    return r
+
+
 linhas = clientes = None
 if fonte.startswith("Gerar"):
     inicio = st.date_input("Vendas desde", INICIO_PADRAO, format="DD/MM/YYYY",
@@ -71,6 +90,12 @@ if fonte.startswith("Gerar"):
         barra = st.progress(0.0, text="Consultando a API…")
         try:
             dados, diag = baixar_da_api(lambda p, m: barra.progress(p, text=m))
+            try:
+                barra.progress(0.95, text="Buscando inadimplentes…")
+                dados["inadimplentes"] = buscar_inadimplentes(st.session_state.get("fichas_inad_meses", 12))
+            except Exception as e:
+                dados["inadimplentes"] = None
+                st.warning(f"Fichas geradas, mas não consegui buscar os inadimplentes: {e}")
             barra.progress(0.97, text="Salvando cache no GitHub…")
             onde = gh.salvar(caminho_cache, dados, f"cache fichas {unidade} {dados['atualizado_em']}")
             barra.empty()
@@ -101,8 +126,41 @@ else:
 
 dados = st.session_state.get("fichas_dados")
 if dados and dados.get("unidade") == unidade:
-    grupos = fc.agrupar(dados["sessoes"], dados["clientes"])
     st.markdown("---")
+    todos = fc.agrupar(dados["sessoes"], dados["clientes"])
+    o1, o2 = st.columns([1, 2])
+    incluir = o1.radio("Incluir inadimplentes?", ["Sim", "Não"], horizontal=True, key="fichas_inad",
+                       help="Não = gera só as fichas de clientes adimplentes (usa o status de inadimplência do Belle).")
+    o2.number_input("Meses de atendimentos para detectar inadimplência", 1, 36, 12, key="fichas_inad_meses",
+                    help="Cliente inadimplente sem nenhum atendimento nesse período não é detectado.")
+    linhas_uso, inad = dados["sessoes"], dados.get("inadimplentes")
+    if incluir == "Não":
+        if not inad and fonte.startswith("Enviar"):
+            st.warning("Com planilhas não dá para saber quem é inadimplente. Use 'Gerar online'.")
+        else:
+            if not inad:
+                st.warning("Este cache ainda não tem a lista de inadimplentes.")
+            if st.button("Atualizar lista de inadimplentes" if inad else "Buscar inadimplentes agora"):
+                try:
+                    with st.spinner("Consultando inadimplentes…"):
+                        dados["inadimplentes"] = inad = buscar_inadimplentes(st.session_state["fichas_inad_meses"])
+                    gh.salvar(caminho_cache, dados, f"inadimplentes {unidade} {inad['atualizado_em']}")
+                    st.session_state["fichas_dados"] = dados
+                    st.session_state.pop("fichas_zip", None)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Não consegui buscar os inadimplentes: {e}")
+        if inad:
+            linhas_uso = fc.sem_inadimplentes(dados["sessoes"], inad)
+            st.caption(f"Lista de inadimplentes de {inad['atualizado_em']} ({len(inad['ids'])} clientes, "
+                       f"atendimentos dos últimos {inad['meses']} meses).")
+    grupos = fc.agrupar(linhas_uso, dados["clientes"])
+    if incluir == "Não" and inad:
+        tiradas = len(todos) - len(grupos)
+        st.info(f"{tiradas} fichas de clientes inadimplentes foram removidas.")
+        if todos and tiradas / len(todos) > 0.5:
+            st.warning("Mais da metade das fichas foi removida. Confira no Explorador se o filtro "
+                       "`statusInadimplencia=Inadimplente` está funcionando no seu Belle.")
     m1, m2, m3 = st.columns(3)
     m1.metric("Fichas", len(grupos))
     m2.metric("Cidades", len({g["pasta"] for g in grupos}))

@@ -149,6 +149,28 @@ def canon_clientes_api(brutos: list, ids_necessarios: set | None = None) -> dict
     return out
 
 
+def canon_inadimplentes_api(brutos: list) -> dict:
+    """Registros de relatorio_atendimentos (filtrado por Inadimplente) -> {'ids': [...], 'nomes': [...]}."""
+    ids, nomes = set(), set()
+    for r in brutos:
+        m = mapear(r, {"id": ["idcliente", "codcliente", "codigocliente"],
+                       "nome": ["nomecliente", "cliente", "nomedocliente"]})
+        i = _s(r.get(m["id"])) if m["id"] else ""
+        n = _id_nome(r.get(m["nome"]))[1] if m["nome"] else ""
+        if i:
+            ids.add(i)
+        if n:
+            nomes.add(n)
+    return {"ids": sorted(ids), "nomes": sorted(nomes)}
+
+
+def sem_inadimplentes(linhas: list, inad: dict) -> list:
+    """Remove as linhas de clientes inadimplentes (por id; se a linha não tem id, pelo nome)."""
+    ids, nomes = set(inad.get("ids", [])), set(inad.get("nomes", []))
+    return [r for r in linhas
+            if not ((r["cli_id"] and r["cli_id"] in ids) or (not r["cli_id"] and r["cli_nome"] in nomes))]
+
+
 # ─────────────────────────────────────────────
 # ENTRADA: planilhas (plano B, igual ao fluxo antigo)
 # ─────────────────────────────────────────────
