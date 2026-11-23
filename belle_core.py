@@ -48,14 +48,14 @@ class BelleClient:
                 time.sleep(max(0.0, 60 - (agora - self._marcas[0]) + 0.5))
             self._marcas.append(time.time())
 
-    def get(self, caminho: str, params: dict | None = None, tentativas: int = 4) -> list:
+    def get(self, caminho: str, params: dict | None = None, tentativas: int = 4, timeout: int = 120) -> list:
         """GET que sempre devolve uma lista de registros (a API às vezes embrulha a lista num dict)."""
         params = {k: v for k, v in (params or {}).items() if v not in (None, "")}
         ultimo = None
         for i in range(tentativas):
             self._esperar()
             try:
-                r = requests.get(BASE + caminho, params=params, timeout=120,
+                r = requests.get(BASE + caminho, params=params, timeout=timeout,
                                  headers={"Authorization": self.token})
                 if r.status_code == 429:
                     time.sleep(30)

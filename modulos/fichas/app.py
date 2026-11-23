@@ -64,12 +64,26 @@ def buscar_inadimplentes(meses, progresso=None):
     cli = BelleClient(token)
     hoje = dt.date.today()
     brutos = []
-    jan = list(cli.janelas(hoje - dt.timedelta(days=30 * int(meses)), hoje + dt.timedelta(days=30)))
+
+    def buscar(a, b):
+        """Uma janela; se estourar o tempo, divide ao meio (até 1 dia) e tenta de novo."""
+        try:
+            return cli.get("relatorios/relatorio_atendimentos", {
+                "codEstab": 1, "dtInicio": cli.d(a), "dtFim": cli.d(b), "statusInadimplencia": "Inadimplente"},
+                tentativas=1, timeout=90)
+        except PermissionError:
+            raise
+        except RuntimeError:
+            if (b - a).days < 1:
+                raise
+            meio = a + (b - a) / 2
+            return buscar(a, meio) + buscar(meio + dt.timedelta(days=1), b)
+
+    jan = list(cli.janelas(hoje - dt.timedelta(days=30 * int(meses)), hoje + dt.timedelta(days=30), dias=30))
     for i, (a, b) in enumerate(jan):
         if progresso:
             progresso(i / len(jan), f"Inadimplentes {a:%m/%Y}…")
-        brutos += cli.get("relatorios/relatorio_atendimentos", {
-            "codEstab": 1, "dtInicio": cli.d(a), "dtFim": cli.d(b), "statusInadimplencia": "Inadimplente"})
+        brutos += buscar(a, b)
     r = fc.canon_inadimplentes_api(brutos)
     r.update({"meses": int(meses), "atualizado_em": dt.datetime.now().strftime("%d/%m/%Y %H:%M")})
     return r
@@ -142,8 +156,10 @@ if dados and dados.get("unidade") == unidade:
                 st.warning("Este cache ainda não tem a lista de inadimplentes.")
             if st.button("Atualizar lista de inadimplentes" if inad else "Buscar inadimplentes agora"):
                 try:
-                    with st.spinner("Consultando inadimplentes…"):
-                        dados["inadimplentes"] = inad = buscar_inadimplentes(st.session_state["fichas_inad_meses"])
+                    barra = st.progress(0.0, text="Consultando inadimplentes…")
+                    dados["inadimplentes"] = inad = buscar_inadimplentes(
+                        st.session_state["fichas_inad_meses"], lambda p, m: barra.progress(min(p, 1.0), text=m))
+                    barra.empty()
                     gh.salvar(caminho_cache, dados, f"inadimplentes {unidade} {inad['atualizado_em']}")
                     st.session_state["fichas_dados"] = dados
                     st.session_state.pop("fichas_zip", None)
