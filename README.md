@@ -12,7 +12,6 @@ Um site só, protegido por senha, com menu para escolher o relatório.
 1. Suba esta pasta num repositório GitHub. Main file: `app.py`.
 2. **Secrets** do app: copie `.streamlit/secrets.toml.example` e preencha `[tokens]` e `[github]`.
 3. Secrets do repositório (Actions): `TOKEN_VIDEIRA`, `TOKEN_JOACABA`, `TOKEN_TREZE_TILIAS`, `TOKEN_CAMPOS_NOVOS`, `TOKEN_ROTA`.
-4. Senha: padrão `12qwaszx`; para trocar sem mexer no código, secret `SENHA_CENTRAL`.
 
 ## Estrutura
 - `app.py` — senha + menu (`st.navigation`). Cada módulo roda como página, sem edição no código dele.
